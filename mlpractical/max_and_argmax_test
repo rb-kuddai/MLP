@@ -1,0 +1,57 @@
+from mlp.layers import max_and_argmax
+from mlp.layers import MLP, Maxout, Softmax
+from mlp.optimisers import SGDOptimiser
+from mlp.costs import CECost
+from mlp.schedulers import LearningRateFixed
+import numpy
+import logging
+import sys
+from mlp.dataset import MNISTDataProvider
+
+
+if __name__ == "__main__":
+    #logging.basicConfig(stream=sys.stdout)
+    # Note, you were asked to do run the experiments on all data and smaller models.
+    logger = logging.getLogger()
+    logging.basicConfig(stream=sys.stdout)
+    logger.setLevel(logging.INFO)
+    # Here I am running the exercises on 1000 training data-points only (similar to regularisation notebook)
+    logger.info('Initialising data providers...')
+    train_dp = MNISTDataProvider(dset='train', batch_size=10, max_num_batches=100, randomize=True)
+    valid_dp = MNISTDataProvider(dset='valid', batch_size=10000, max_num_batches=-10, randomize=False)
+    test_dp = MNISTDataProvider(dset='eval', batch_size=10000, max_num_batches=-10, randomize=False)
+    #some hyper-parameters
+    nhid = 100
+    learning_rate = 0.1
+    k = 2 #maxout pool size (stride is assumed k)
+    max_epochs = 30
+    cost = CECost()
+    rng = numpy.random.RandomState([2015,10,10])
+    stats = []
+    for layer in xrange(1, 2):
+
+        train_dp.reset()
+        valid_dp.reset()
+        test_dp.reset()
+
+        #define the model
+        model = MLP(cost=cost)
+        model.add_layer(Maxout(idim=784, odim=nhid, k=k, irange=0.05, rng=rng))
+        for i in xrange(1, layer):
+            logger.info("Stacking hidden layer (%s)" % str(i+1))
+            model.add_layer(Maxout(idim=nhid, odim=nhid, k=k, irange=0.2, rng=rng))
+        model.add_layer(Softmax(idim=nhid, odim=10, rng=rng))
+
+        # define the optimiser, here stochasitc gradient descent
+        # with fixed learning rate and max_epochs
+        lr_scheduler = LearningRateFixed(learning_rate=learning_rate, max_epochs=max_epochs)
+        optimiser = SGDOptimiser(lr_scheduler=lr_scheduler)
+
+        logger.info('Training started...')
+        tr_stats, valid_stats = optimiser.train(model, train_dp, valid_dp)
+
+        logger.info('Testing the model on test set:')
+        tst_cost, tst_accuracy = optimiser.validate(model, test_dp)
+        logger.info('MNIST test set accuracy is %.2f %%, cost (%s) is %.3f'%(tst_accuracy*100., cost.get_name(), tst_cost))
+
+        stats.append((tr_stats, valid_stats, (tst_cost, tst_accuracy)))
